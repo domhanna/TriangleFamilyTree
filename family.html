@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Triangle Family Tree</title>
+    <meta charset="utf-8">
+    <style>
+        .node {
+            cursor: pointer;
+            font: 10px sans-serif;
+        }
+
+        .node circle, .node rect {
+            fill: #fff;
+            stroke-width: 2px;
+        }
+
+        .decade circle {
+            fill: none;
+            stroke: lightgrey;
+            stroke-width: 0.5px;
+        }
+
+        .decade {
+            font: 10px sans-serif;
+        }
+
+        .title {
+            font: 12px sans-serif;
+        }
+
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 1.5px;
+        }
+    </style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+<script>
+    var diameter = 2000;
+
+    function yearToY(year) {
+        return (year - 2015) * 75; // Adjust based on the new root year
+    }
+
+    function getY(d) {
+        return yearToY(d.born + 0.25);
+    }
+
+    var duration = 750,
+        root;
+    var tree = d3.layout.tree()
+        .size([360, diameter / 2 - 150])
+        .separation(function (a, b) {
+            return (a.parent == b.parent ? 1 : 2) / a.depth + 1;
+        });
+
+    var diagonal = d3.svg.diagonal.radial()
+        .source(function (d) {
+            if (d.source.firstname === "")
+                return {x: d.target.x, y: getY(d.source)};
+            else
+                return {x: d.source.x, y: getY(d.source)};
+        })
+        .target(function (d) {
+            return {x: d.target.x, y: getY(d.target)};
+        })
+        .projection(function (d) {
+            return [d.y, d.x / 180 * Math.PI];
+        });
+
+    var svg = d3.select("body").append("svg")
+        .attr("width", diameter * 2)
+        .attr("height", diameter * 1.5)
+        .append("g")
+        .attr("transform", "translate(" + diameter / 2 + "," + diameter / 2 + ")");
+
+    d3.json("family.json", function (error, data) {
+        if (error) throw error;
+        root = data;
+
+        var nodes = tree.nodes(root),
+            links = tree.links(nodes);
+
+        var link = svg.selectAll(".link")
+            .data(links)
+            .enter().append("path")
+            .attr("class", "link")
+            .attr("d", diagonal);
+
+        var decade = svg.selectAll(".decade")
+            .data([2015, 2018, 2021, 2024])
+            .enter().append("g")
+            .attr("class", "decade");
+
+        decade.append("circle")
+            .attr("r", function (d) {
+                return yearToY(d);
+            });
+
+        decade.append("text")
+            .attr("dy", ".31em")
+            .attr("transform", function (d) {
+                return "translate(-10,-" + yearToY(d) + ")";
+            })
+            .text(function (d) {
+                return d;
+            });
+
+        svg.selectAll(".title")
+            .data([""])
+            .enter().append("text")
+            .attr("class", "title")
+            .attr("transform", function (d) {
+                return "translate(-50,20)";
+            })
+            .text(function (d) {
+                return d;
+            });
+
+        var node = svg.selectAll(".node")
+            .data(nodes)
+            .enter().append("g")
+            .attr("class", "node")
+            .attr("transform", function (d, i) {
+                return "rotate(" + (d.x - 90) + ")translate(" + getY(d) + ")";
+            });
+
+        var c = d3.scale.category10();
+        node.filter(function(d) {return d.depth > 0;})
+			.append("circle")
+            .attr("r", 4.5)
+            .attr("stroke", function (d) {
+                return c(d.depth);
+            });
+
+        node.append("text")
+            .attr("dy", ".31em")
+            .attr("text-anchor", function (d) {
+                return d.x < 180 ? "start" : "end";
+            })
+            .attr("transform", function (d) {
+                return d.x < 180 ? "translate(8)" : "rotate(180)translate(-8)";
+            })
+            .text(function (d) {
+                return d.firstname;
+            });
+
+        update(root);
+    });
+
+    d3.select(self.frameElement).style("height", diameter - 150 + "px");
+
+    function update(source) {
+        var nodes = tree.nodes(root),
+            links = tree.links(nodes);
+
+        nodes.forEach(function (d) {
+            d.y = d.depth * 180;
+        });
+
+        var node = svg.selectAll("g.node")
+            .data(nodes, function (d) {
+                return d.id || (d.id = ++i);
+            });
+
+        var nodeEnter = node.enter().append("g")
+            .attr("class", "node")
+            .attr("transform", function (d) {
+                return "translate(" + source.y0 + "," + source.x0 + ")";
+            })
+            .on("click", click);
+
+        nodeEnter.append("circle")
+            .attr("r", 1e-6)
+            .style("fill", function (d) {
+                return d._children ? "lightsteelblue" : "#fff";
+            });
+
+        nodeEnter.append("text")
+            .attr("x", function (d) {
+                return d.children || d._children ? -13 : 13;
+            })
+            .attr("dy", ".35em")
+            .attr("text-anchor", function (d) {
+                return d.children || d._children ? "end" : "start";
+            })
+            .text(function (d) {
+                return d.firstname;
+            })
+            .style("fill-opacity", 1e-6);
+
+        var nodeUpdate = node.transition()
+            .duration(duration)
+            .attr("transform", function (d) {
+                return "translate(" + d.y + "," + d.x + ")";
+            });
+
+        nodeUpdate.select("circle")
+            .attr("r", 10)
+            .style("fill", function (d) {
+                return d._children ? "lightsteelblue" : "#fff";
+            });
+
+        nodeUpdate.select("text")
+            .style("fill-opacity", 1);
+
+        var nodeExit = node.exit().transition()
+            .duration(duration)
+            .attr("transform", function (d) {
+                return "translate(" + source.y + "," + source.x + ")";
+            })
+            .remove();
+
+        nodeExit.select("circle")
+            .attr("r", 1e-6);
+
+        nodeExit.select("text")
+            .style("fill-opacity", 1e-6);
+
+        var link = svg.selectAll("path.link")
+            .data(links, function (d) {
+                return d.target.id;
+            });
+
+        link.enter().insert("path", "g")
+            .attr("class", "link")
+            .attr("d", function (d) {
+                return diagonal({source: d.source, target: d.target});
+            });
+
+        link.transition()
+            .duration(duration)
+            .attr("d", diagonal);
+
+        link.exit().transition()
+            .duration(duration)
+            .attr("d", function (d) {
+                return diagonal({source: d.source, target: d.target});
+            })
+            .remove();
+
+        nodes.forEach(function (d) {
+            d.x0 = d.x;
+            d.y0 = d.y;
+        });
+    }
+
+    function click(d) {
+        if (d.children) {
+            d._children = d.children;
+            d.children = null;
+        } else {
+            d.children = d._children;
+            d._children = null;
+        }
+        update(d);
+    }
+</script>
+</body>
+</html>
